@@ -97,7 +97,8 @@ Type `?` to open a numbered menu:
 Enter the number on the next line, or press Enter to cancel. Invalid menu choices
 re-show the menu.
 
-Ctrl-C cancels the current wait-for-reply without exiting. Use `?` → `5` to quit.
+Ctrl-C interrupts the current operation (e.g. waiting for a reply). Press Ctrl-C
+twice within a second to exit. You can also use `?` → `5` to quit.
 
 ## How it works
 

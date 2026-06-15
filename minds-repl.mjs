@@ -41,6 +41,7 @@ const USER_COLOR = c.cyan;
 const MIND_COLOR = c.green;
 const SYS_COLOR = c.gray;
 const WAIT_TIMEOUT_MS = '180000';
+const SIGINT_EXIT_MS = 1000;
 
 function findOfficialMinds() {
   const self = realpathSync(process.argv[1]);
@@ -298,18 +299,33 @@ async function repl(args) {
 
   let aborter = new AbortController();
   let awaitingMenuChoice = false;
+  let busy = false;
+  let lastSigintAt = 0;
   const ctx = { rl, mind, alias, shouldExit: false };
 
   rl.on('SIGINT', () => {
-    aborter.abort();
-    aborter = new AbortController();
+    const now = Date.now();
+    const doubleTap = now - lastSigintAt < SIGINT_EXIT_MS;
+    lastSigintAt = now;
+
+    if (doubleTap) {
+      ctx.shouldExit = true;
+      rl.close();
+      return;
+    }
+
+    if (busy) {
+      aborter.abort();
+      aborter = new AbortController();
+    }
     awaitingMenuChoice = false;
     process.stdout.write('\r' + ' '.repeat(20) + '\r');
-    console.log(c.yellow + '(interrupted — type ? and choose quit to exit)' + c.reset);
+    console.log(c.yellow + '(interrupted — press Ctrl+C again to exit)' + c.reset);
     safePrompt();
   });
 
   for await (const raw of rl) {
+    if (ctx.shouldExit) break;
     const line = raw.trim();
 
     if (awaitingMenuChoice) {
@@ -324,10 +340,13 @@ async function repl(args) {
         safePrompt();
         continue;
       }
+      busy = true;
       try {
         await action.run(ctx);
       } catch (e) {
         console.log(c.red + 'option failed: ' + e.message + c.reset);
+      } finally {
+        busy = false;
       }
       if (ctx.shouldExit) break;
       safePrompt();
@@ -343,6 +362,7 @@ async function repl(args) {
       continue;
     }
 
+    busy = true;
     try {
       const reply = await sendAndWait(alias, line, mind.name, aborter.signal);
       if (!reply && !aborter.signal.aborted) {
@@ -350,6 +370,8 @@ async function repl(args) {
       }
     } catch (e) {
       console.log(c.red + 'send failed: ' + e.message + c.reset);
+    } finally {
+      busy = false;
     }
     safePrompt();
   }
