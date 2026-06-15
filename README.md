@@ -2,23 +2,25 @@
 
 A thin Node.js wrapper around [`@animocabrands/minds-cli`](https://build.hellominds.ai/docs/get-started/cli)
 that gives you a `claude`-style interactive prompt to chat with your Minds: colored turns with
-left-border separators, markdown/HTML rendering, a spinner while the Mind thinks, and a few slash commands.
+left-border separators, markdown/HTML rendering, a spinner while the Mind thinks, and a `?` options menu.
 
 ```
 ────────────────────────────────────────────────────────────
-Hermes  xiaomi/mimo-v2.5  ·  alias: repl-hermes
-type /help for commands, /exit to quit
+MyMind  xiaomi/mimo-v2.5  ·  alias: repl-mymind
+type ? for options
 ────────────────────────────────────────────────────────────
-› hey, status update on Guillaume?
+› summarize the project README in three bullets
 
 │ You
-│ hey, status update on Guillaume?
+│ summarize the project README in three bullets
   ⠋ thinking…
 
-│ Hermes  02:30 PM
-│ Here's the latest on Guillaume:
+│ MyMind  02:30 PM
+│ Here is a short summary:
 │
-│ **Status:** Still waiting. Guillaume claimed he sent 1 ETH…
+│ **Setup** — install the official CLI and set `MINDS_BUILDER_API_KEY`.
+│ **Usage** — run the REPL, pick a Mind, then chat at the prompt.
+│ **Options** — type `?` for history, clear screen, list minds, or quit.
 ```
 
 ## Requirements
@@ -44,15 +46,16 @@ echo 'export MINDS_BUILDER_API_KEY="<your-key>"' >> ~/.zshenv
 `~/.zshenv` is read by all zsh invocations (login and non-login). You can also use `~/.zprofile`
 for login shells only. The key does **not** need to live in `~/.zshrc`.
 
-Get or rotate a key at https://build.hellominds.ai/console
+Get or rotate a key at the [HelloMinds console](https://build.hellominds.ai/console).
 
 ## Install
 
-The wrapper is a single self-contained file: `minds-repl.mjs`. To make it
-invokable as `minds`, add one line to your `~/.zshrc`:
+The wrapper is a single self-contained file: `minds-repl.mjs`. Clone this repo
+wherever you keep tools, then make it invokable as `minds` with a shell function
+in `~/.zshrc` (adjust the path to match your checkout):
 
 ```sh
-minds() { node ~/workspace/quidli/hellominds/minds-repl.mjs "$@"; }
+minds() { node "$HOME/minds-cli-wrapper/minds-repl.mjs" "$@"; }
 ```
 
 Then `source ~/.zshrc` and run `minds`. Or call it directly:
@@ -68,26 +71,33 @@ node minds-repl.mjs
 ## Usage
 
 ```sh
-minds                       # auto-picks if only one Mind; otherwise prompts
-minds --mind Hermes         # pick by name
+minds                       # auto-picks if only one Mind; otherwise numbered picker
+minds --mind <name>         # pick by name
 minds --alias main          # reuse an existing conversation alias
 minds list                  # any non-REPL args pass through to the official CLI
 minds doctor
 minds chat list
 ```
 
-### Slash commands inside the REPL
+When several Minds are available, the startup picker shows a numbered list. Invalid
+choices re-prompt instead of exiting.
 
-| Command         | What it does                           |
-| --------------- | -------------------------------------- |
-| `/exit` `/quit` | Quit the REPL                          |
-| `/clear`        | Clear the screen                       |
-| `/help`         | Show this list                         |
-| `/who`          | Show current Mind + conversation alias |
-| `/minds`        | List Minds on your account             |
-| `/history [n]`  | Show last `n` messages (default 10)    |
+### Options menu inside the REPL
 
-Ctrl-C cancels the current wait-for-reply without exiting.
+Type `?` to open a numbered menu:
+
+| # | Action |
+| - | ------ |
+| 1 | Show conversation history (prompts for count; default 10) |
+| 2 | Clear screen |
+| 3 | List Minds on your account |
+| 4 | Show current Mind + conversation alias |
+| 5 | Quit |
+
+Enter the number on the next line, or press Enter to cancel. Invalid menu choices
+re-show the menu.
+
+Ctrl-C cancels the current wait-for-reply without exiting. Use `?` → `5` to quit.
 
 ## How it works
 
@@ -106,7 +116,7 @@ official CLI without recursing.
 
 ```sh
 node smoke-test.mjs
-node smoke-test.mjs --mind Hermes
+node smoke-test.mjs --mind <name>
 ```
 
 ## Customizing

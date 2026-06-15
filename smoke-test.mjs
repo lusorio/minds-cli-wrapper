@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Non-interactive smoke test: create chat, send with --wait, print parsed reply.
- * Usage: node smoke-test.mjs [--mind Hermes]
+ * Usage: node smoke-test.mjs [--mind <name>]
  */
 import { callMinds, isMindMessage } from './minds-repl.mjs';
 

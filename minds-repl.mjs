@@ -162,6 +162,55 @@ function question(rl, q) {
   return new Promise(res => rl.question(q, ans => res(ans)));
 }
 
+function printMenu() {
+  const lines = MENU_ACTIONS.map((action, i) =>
+    `  ${c.yellow}${i + 1}${c.reset}. ${action.label}`,
+  );
+  console.log(SYS_COLOR + 'Options:' + c.reset);
+  console.log(lines.join('\n'));
+  console.log(SYS_COLOR + 'Enter a number, or press enter to cancel.' + c.reset);
+}
+
+const MENU_ACTIONS = [
+  {
+    label: 'Show conversation history',
+    async run(ctx) {
+      const raw = await question(ctx.rl, c.dim + 'How many messages? [10] › ' + c.reset);
+      const n = raw.trim() || '10';
+      const h = await callMinds(['history', ctx.alias, '--limit', n]);
+      (h.items || []).forEach(it => {
+        if (isUserMessage(it)) printUserMessage(it);
+        else if (isMindMessage(it)) printMindMessage(it, ctx.mind.name);
+      });
+    },
+  },
+  {
+    label: 'Clear screen',
+    async run() {
+      console.clear();
+    },
+  },
+  {
+    label: 'List available minds',
+    async run() {
+      const l = await callMinds(['list']);
+      l.items?.forEach(m => console.log(`${c.bold}${m.name}${c.reset} ${c.gray}${m.model} · ${m.mindId}${c.reset}`));
+    },
+  },
+  {
+    label: 'Show current mind + alias',
+    async run(ctx) {
+      console.log(SYS_COLOR + `${ctx.mind.name} (${ctx.mind.mindId}) — alias ${ctx.alias}` + c.reset);
+    },
+  },
+  {
+    label: 'Quit',
+    async run(ctx) {
+      ctx.shouldExit = true;
+    },
+  },
+];
+
 async function pickMind(args) {
   let nameFlag = null;
   for (let i = 0; i < args.length; i++) {
@@ -178,11 +227,15 @@ async function pickMind(args) {
   console.log(c.dim + 'Choose a mind:' + c.reset);
   list.items.forEach((m, i) => console.log(`  ${c.yellow}${i+1}${c.reset}. ${c.bold}${m.name}${c.reset} ${c.gray}(${m.model})${c.reset}`));
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const ans = await question(rl, c.dim + '# > ' + c.reset);
-  rl.close();
-  const idx = parseInt(ans.trim(), 10) - 1;
-  if (!list.items[idx]) throw new Error('Invalid choice.');
-  return list.items[idx];
+  while (true) {
+    const ans = await question(rl, c.dim + '# > ' + c.reset);
+    const idx = parseInt(ans.trim(), 10) - 1;
+    if (list.items[idx]) {
+      rl.close();
+      return list.items[idx];
+    }
+    console.log(c.yellow + `Invalid choice — pick 1–${list.items.length}.` + c.reset);
+  }
 }
 
 function aliasFor(args, mind) {
@@ -232,7 +285,7 @@ async function repl(args) {
   const bar = c.gray + '─'.repeat(Math.min(60, (process.stdout.columns || 60))) + c.reset;
   console.log(bar);
   console.log(c.bold + MIND_COLOR + mind.name + c.reset + c.gray + `  ${mind.model}  ·  alias: ${alias}` + c.reset);
-  console.log(SYS_COLOR + 'type /help for commands, /exit to quit' + c.reset);
+  console.log(SYS_COLOR + 'type ? for options' + c.reset);
   console.log(bar);
 
   const rl = readline.createInterface({
@@ -244,58 +297,56 @@ async function repl(args) {
   safePrompt();
 
   let aborter = new AbortController();
+  let awaitingMenuChoice = false;
+  const ctx = { rl, mind, alias, shouldExit: false };
+
   rl.on('SIGINT', () => {
     aborter.abort();
     aborter = new AbortController();
+    awaitingMenuChoice = false;
     process.stdout.write('\r' + ' '.repeat(20) + '\r');
-    console.log(c.yellow + '(interrupted — type /exit to quit)' + c.reset);
+    console.log(c.yellow + '(interrupted — type ? and choose quit to exit)' + c.reset);
     safePrompt();
   });
 
   for await (const raw of rl) {
     const line = raw.trim();
+
+    if (awaitingMenuChoice) {
+      awaitingMenuChoice = false;
+      if (!line) { safePrompt(); continue; }
+      const idx = parseInt(line, 10) - 1;
+      const action = MENU_ACTIONS[idx];
+      if (!action) {
+        console.log(c.yellow + `Invalid choice: ${line}` + c.reset);
+        printMenu();
+        awaitingMenuChoice = true;
+        safePrompt();
+        continue;
+      }
+      try {
+        await action.run(ctx);
+      } catch (e) {
+        console.log(c.red + 'option failed: ' + e.message + c.reset);
+      }
+      if (ctx.shouldExit) break;
+      safePrompt();
+      continue;
+    }
+
     if (!line) { safePrompt(); continue; }
 
-    if (line.startsWith('/')) {
-      const [cmd, ...rest] = line.split(/\s+/);
-      if (cmd === '/exit' || cmd === '/quit' || cmd === '/q') break;
-      if (cmd === '/clear') { console.clear(); safePrompt(); continue; }
-      if (cmd === '/help') {
-        console.log(SYS_COLOR + [
-          '/exit            quit',
-          '/clear           clear screen',
-          '/history [n]     show last n messages (default 10)',
-          '/minds           list available minds',
-          '/who             show current mind + alias',
-        ].join('\n') + c.reset);
-        safePrompt(); continue;
-      }
-      if (cmd === '/who') {
-        console.log(SYS_COLOR + `${mind.name} (${mind.mindId}) — alias ${alias}` + c.reset);
-        safePrompt(); continue;
-      }
-      if (cmd === '/minds') {
-        const l = await callMinds(['list']);
-        l.items?.forEach(m => console.log(`${c.bold}${m.name}${c.reset} ${c.gray}${m.model} · ${m.mindId}${c.reset}`));
-        safePrompt(); continue;
-      }
-      if (cmd === '/history') {
-        const n = rest[0] || '10';
-        const h = await callMinds(['history', alias, '--limit', n]);
-        (h.items || []).forEach(it => {
-          if (isUserMessage(it)) printUserMessage(it);
-          else if (isMindMessage(it)) printMindMessage(it, mind.name);
-        });
-        safePrompt(); continue;
-      }
-      console.log(c.yellow + `unknown command: ${cmd}` + c.reset);
-      safePrompt(); continue;
+    if (line === '?') {
+      printMenu();
+      awaitingMenuChoice = true;
+      safePrompt();
+      continue;
     }
 
     try {
       const reply = await sendAndWait(alias, line, mind.name, aborter.signal);
       if (!reply && !aborter.signal.aborted) {
-        console.log(c.yellow + '(no reply in 180s — try /history later)' + c.reset);
+        console.log(c.yellow + '(no reply in 180s — type ? and pick history to check later)' + c.reset);
       }
     } catch (e) {
       console.log(c.red + 'send failed: ' + e.message + c.reset);
